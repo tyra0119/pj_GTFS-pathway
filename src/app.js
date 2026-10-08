@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=57ee00b-muz5ntso';
-import { toLatLon } from './geo.js?v=57ee00b-muz5ntso';
-import { stationGtfsFiles, extraFiles } from './export-files.js?v=57ee00b-muz5ntso';
-import { makeZip } from './zip.js?v=57ee00b-muz5ntso';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=1e52a6b-muz7hcke';
+import { toLatLon } from './geo.js?v=1e52a6b-muz7hcke';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=1e52a6b-muz7hcke';
+import { makeZip } from './zip.js?v=1e52a6b-muz7hcke';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -360,6 +360,7 @@ function recompute() {
   renderIssues();
   renderSelection();
   syncTransform();
+  renderSearchList();
 }
 
 // merge に同じキーを渡した連続の変更 (標高の入力中・矢印キーでの移動など) は、1.5 秒以内なら 1 回の「元に戻す」にまとめる
@@ -695,8 +696,80 @@ function selectionCenter() {
     return new THREE.Vector3((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
   }
   if (sel.kind === 'surface' && sel.point) return sel.point.clone();
+  if (sel.kind === 'surface') return surfaceCenter(sel.si);
   return null;
 }
+
+function surfaceCenter(si) {
+  const buf = types[meta.surfaces[si].type];
+  const c = new THREE.Vector3();
+  let n = 0;
+  for (let k = 0; k < buf.tri.length; k++) {
+    if (buf.tri[k] !== si) continue;
+    for (let j = 0; j < 3; j++) {
+      const v = buf.idx[k * 3 + j] * 3;
+      c.x += buf.pos[v]; c.y += buf.pos[v + 1]; c.z += buf.pos[v + 2];
+      n++;
+    }
+  }
+  return n ? c.divideScalar(n) : null;
+}
+
+// ------------------------------------------------------------------ 探す (ID・名前)
+
+// 候補の一覧 (datalist)。ノードは名前・種別・階、リンクは種別と両端を添える
+function renderSearchList() {
+  const opts = [];
+  for (const n of result.nodes)
+    opts.push(`<option value="${esc(n.id)}">${esc([n.name, LOC_TYPE[n.location_type], n.level_id && '階 ' + n.level_id].filter(Boolean).join(' / '))}</option>`);
+  for (const e of result.edges)
+    opts.push(`<option value="${esc(e.id)}">${esc(`${MODE_NAMES[e.mode] ?? e.mode} ${e.from} → ${e.to}`)}</option>`);
+  $('#search-list').innerHTML = opts.join('');
+}
+
+// 完全一致 (ID・出入口名・gml:id) → 一部一致が 1 件ならそれ → 複数なら候補を知らせる
+function searchAndSelect(raw) {
+  const q = raw.trim().toLowerCase();
+  if (!q) return;
+  let hit = null;
+  const nExact = result.nodes.find((n) => n.id.toLowerCase() === q || (n.name && n.name.toLowerCase() === q));
+  const eExact = result.edges.find((e) => e.id.toLowerCase() === q);
+  if (nExact) hit = { kind: 'node', id: nExact.id };
+  else if (eExact) hit = { kind: 'edge', id: eExact.id };
+  else {
+    const si = meta.surfaces.findIndex((s) => s.id.toLowerCase() === q);
+    if (si >= 0) hit = { kind: 'surface', si };
+  }
+  if (!hit) {
+    const parts = [
+      ...result.nodes.filter((n) => n.id.toLowerCase().includes(q) || (n.name && n.name.toLowerCase().includes(q))).map((n) => ({ kind: 'node', id: n.id })),
+      ...result.edges.filter((e) => e.id.toLowerCase().includes(q)).map((e) => ({ kind: 'edge', id: e.id })),
+    ];
+    if (parts.length === 1) hit = parts[0];
+    else if (parts.length > 1) return toast(`「${raw.trim()}」は ${parts.length} 件: ${parts.slice(0, 6).map((p) => p.id).join(', ')}${parts.length > 6 ? ' …' : ''}。候補から選んでください`);
+    else return toast(`「${raw.trim()}」は見つかりません (削除したノードやリンクは出ません)`);
+  }
+  // 高さで切って隠れているものは、全体表示に戻してから選ぶ
+  const z = hit.kind === 'node' ? nodeById.get(hit.id).z : hit.kind === 'edge' ? null : surfaceCenter(hit.si)?.z;
+  const hidden = hit.kind === 'edge'
+    ? (() => { const e = edgeById.get(hit.id); return !inRange(nodeById.get(e.from).z) && !inRange(nodeById.get(e.to).z); })()
+    : z != null && !inRange(z);
+  if (hidden) resetClip();
+  select(hit, true);
+  toast(`${hit.kind === 'surface' ? meta.surfaces[hit.si].type + ' ' + meta.surfaces[hit.si].id : hit.id} を選びました`);
+}
+
+$('#search').addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter') { ev.preventDefault(); searchAndSelect(ev.target.value); }
+  if (ev.key === 'Escape') ev.target.blur();
+});
+// 候補 (datalist) から選んだときは、そのまま選ぶ
+$('#search').addEventListener('input', (ev) => {
+  if (ev.inputType === 'insertReplacementText' || ev.inputType === undefined) {
+    const v = ev.target.value.trim();
+    if (nodeById.has(v) || edgeById.has(v)) searchAndSelect(v);
+  }
+});
 
 function focusSelection() {
   const c = selectionCenter();
@@ -939,6 +1012,7 @@ window.addEventListener('keydown', (ev) => {
   }
   if (k === 'delete' || k === 'backspace') return deleteSelection();
   if (k === 'f') return focusSelection();
+  if (ev.key === '/') { ev.preventDefault(); $('#search').focus(); $('#search').select(); return; }
   if (k === 't') return viewFrom('top');
   if (k === 'o') return viewFrom('oblique');
   if (k === 'r' && sel && sel.kind !== 'surface') return $('#reviewed')?.click();

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pathways 統合エディタ</title>
-  <link rel="stylesheet" href="src/style.css?v=57ee00b-muz5ntso">
+  <link rel="stylesheet" href="src/style.css?v=1e52a6b-muz7hcke">
   <script type="importmap">
     { "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
   </script>
@@ -18,6 +18,10 @@
       <button data-tool="addNode" title="床をクリックしてノードを追加 (N)">ノード追加 <kbd>N</kbd></button>
       <button data-tool="addEdge" title="ノードを 2 つ順にクリックしてリンクを追加 (C)">リンク追加 <kbd>C</kbd></button>
       <button data-tool="link" title="選択中のノードに PLATEAU の面を紐付け (L)">面と紐付け <kbd>L</kbd></button>
+    </div>
+    <div class="search">
+      <input type="search" id="search" list="search-list" placeholder="ID・名前で探す (/)" title="stop_id (402N0121)・pathway_id (402L0019)・出入口名 (D1)・PLATEAU の gml:id で探す。一部だけでも可 (0121)" autocomplete="off">
+      <datalist id="search-list"></datalist>
     </div>
     <div class="actions">
       <button id="undo" title="元に戻す (Ctrl+Z)">↶</button>
@@ -89,6 +93,6 @@
   <footer id="status"><span id="hint"></span><span id="hover"></span><span class="credit">出典: 3D都市モデル (Project PLATEAU) 新宿区 2025年度 (国土交通省) / 東京都交通局・公共交通オープンデータ協議会 (CC BY 4.0) を加工 / 地表の標高: 国土地理院</span></footer>
   <div id="toast" role="status" aria-live="polite"></div>
 
-  <script type="module" src="src/app.js?v=57ee00b-muz5ntso"></script>
+  <script type="module" src="src/app.js?v=1e52a6b-muz7hcke"></script>
 </body>
 </html>

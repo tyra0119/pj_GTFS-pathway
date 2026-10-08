@@ -161,3 +161,6 @@ button { white-space: nowrap; }
   body { grid-template-columns: 190px 1fr 240px; }
   .save-state { min-width: 0; }
 }
+
+.search input { width: 190px; }
+@media (max-width: 900px) { .search input { width: 140px; } }
