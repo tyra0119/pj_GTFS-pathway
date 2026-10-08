@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=5e1449c-muz53k26';
-import { toLatLon } from './geo.js?v=5e1449c-muz53k26';
-import { stationGtfsFiles, extraFiles } from './export-files.js?v=5e1449c-muz53k26';
-import { makeZip } from './zip.js?v=5e1449c-muz53k26';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=2370a66-muz5ahnm';
+import { toLatLon } from './geo.js?v=2370a66-muz5ahnm';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=2370a66-muz5ahnm';
+import { makeZip } from './zip.js?v=2370a66-muz5ahnm';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -359,9 +359,15 @@ function recompute() {
   syncTransform();
 }
 
-function commit(mutate, msg) {
-  undoStack.push(JSON.stringify(edits));
-  if (undoStack.length > 200) undoStack.shift();
+// merge に同じキーを渡した連続の変更 (標高の入力中・矢印キーでの移動など) は、1.5 秒以内なら 1 回の「元に戻す」にまとめる
+let lastMerge = { key: null, at: 0 };
+function commit(mutate, msg, merge = null) {
+  const now = Date.now();
+  if (!(merge && lastMerge.key === merge && now - lastMerge.at < 1500)) {
+    undoStack.push(JSON.stringify(edits));
+    if (undoStack.length > 200) undoStack.shift();
+  }
+  lastMerge = { key: merge, at: now };
   redoStack.length = 0;
   mutate(edits);
   recompute();
@@ -371,6 +377,7 @@ function commit(mutate, msg) {
 
 function undo() {
   if (!undoStack.length) return;
+  lastMerge = { key: null, at: 0 };
   redoStack.push(JSON.stringify(edits));
   edits = JSON.parse(undoStack.pop());
   recompute();
@@ -516,8 +523,20 @@ function issueTags(list) {
   return list.map((i) => `<div><span class="tag ${i.severity}">${i.severity === 'warn' ? '要確認' : '参考'}</span> ${esc(i.text)}${i.nearest ? ` <small>(床: ${i.nearest.map(f2).join(', ')})</small>` : ''}${i.walls ? ` <small>(${i.walls} 枚)</small>` : ''}</div>`).join('');
 }
 
+// 入力欄に打っている最中は欄を作り直さない (カーソル位置や打ちかけの値が消えるため)。欄を離れたら描き直す
+const selKey = () => (sel ? `${sel.kind}:${sel.id ?? sel.si}` : '');
 function renderSelection() {
   const box = $('#selection');
+  const act = document.activeElement;
+  if (act && act.tagName === 'INPUT' && act.type !== 'checkbox' && box.contains(act) && box.dataset.sel === selKey()) {
+    act.addEventListener('blur', () => renderSelection(), { once: true });
+    return;
+  }
+  renderSelectionBody(box);
+  box.dataset.sel = selKey();
+}
+
+function renderSelectionBody(box) {
   if (!sel) {
     box.innerHTML = '<h2>選択</h2><p class="hint">ノード・リンク・面をクリックすると詳細が出ます。</p>';
     return;
@@ -542,8 +561,9 @@ function renderSelection() {
         <dt>PLATEAU</dt><dd>${linked ? `<span class="idlink" data-surface="${esc(linked.id)}">${esc(linked.type)}</span> <button class="small" id="unlink">解除</button>` : '<span class="hint">未紐付け (L で面をクリック)</span>'}</dd>
       </dl>
       ${n.candidates && n.candidates.length ? `<div class="cands"><span class="hint">下にある床面 (クリックでその標高に):</span><br>${n.candidates.map((c) => `<button class="small" data-cand="${c.z}">${f2(c.z)} m</button>`).join('')}</div>` : ''}
-      <div class="row">標高を手入力 <input type="number" id="z-in" step="0.05" value="${f2(n.z)}"> <button class="small" id="z-apply">適用</button>
+      <div class="row">標高を手入力 <input type="number" id="z-in" step="0.05" value="${f2(n.z)}" title="入力するとすぐ反映 (▲▼ で 0.05 m ずつ)"> m
         ${n.zSource === 'manual' ? '<button class="small" id="z-auto">自動に戻す</button>' : ''}</div>
+      <p class="hint">位置は矢印キーで画面の左右・奥/手前へ 0.1 m (Shift で 1 m)、PageUp / PageDown で上下。</p>
       <h2>指摘</h2>${issueTags(iss)}
       <h2>つながるリンク (${conn.length})</h2>
       <div>${conn.map((e) => `<span class="idlink" data-edge="${esc(e.id)}">${esc(e.id)}</span> ${MODE_NAMES[e.mode] ?? e.mode} → ${esc(e.from === n.id ? e.to : e.from)}`).join('<br>') || '<span class="hint">なし</span>'}</div>
@@ -556,10 +576,16 @@ function renderSelection() {
       </div>`;
     box.querySelector('#sel-level')?.addEventListener('change', (ev) => commit((e) => { nodeEdit(n.id).level_id = ev.target.value; }, `${n.id} の階を ${ev.target.value} にしました`));
     box.querySelectorAll('[data-cand]').forEach((b) => b.addEventListener('click', () => commit((e) => { nodeEdit(n.id).z = Number(b.dataset.cand); }, `${n.id} の標高を ${b.dataset.cand} m にしました`)));
-    box.querySelector('#z-apply').addEventListener('click', () => {
-      const v = Number(box.querySelector('#z-in').value);
-      if (Number.isFinite(v)) commit((e) => { nodeEdit(n.id).z = v; }, `${n.id} の標高を ${v} m にしました`);
-    });
+    // 打つたびに反映 (打ちかけの値で何度も描き直さないよう 250 ms 待つ。Enter ならすぐ)
+    const zIn = box.querySelector('#z-in');
+    const applyZ = () => {
+      clearTimeout(zTimer);
+      const v = Number(zIn.value);
+      if (zIn.value === '' || !Number.isFinite(v) || Math.abs(v - n.z) < 0.001) return;
+      commit(() => { nodeEdit(n.id).z = Math.round(v * 100) / 100; }, `${n.id} の標高を ${v} m にしました`, `z:${n.id}`);
+    };
+    zIn.addEventListener('input', () => { clearTimeout(zTimer); zTimer = setTimeout(applyZ, 250); });
+    zIn.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') applyZ(); });
     box.querySelector('#z-auto')?.addEventListener('click', () => commit((e) => { delete nodeEdit(n.id).z; cleanup(e.nodes, n.id); }, '標高を自動推定に戻しました'));
     box.querySelector('#unlink')?.addEventListener('click', () => commit((e) => { delete nodeEdit(n.id).link; delete nodeEdit(n.id).linkType; cleanup(e.nodes, n.id); }, '紐付けを解除しました'));
     box.querySelector('#reset-pos')?.addEventListener('click', () => commit((e) => { const ed = nodeEdit(n.id); delete ed.x; delete ed.y; delete ed.z; cleanup(e.nodes, n.id); }, '位置を ODPT の値に戻しました'));
@@ -645,6 +671,7 @@ $('#issues').addEventListener('click', (ev) => {
 // ------------------------------------------------------------------ 選択・ツール
 
 let lastNode = null;
+let zTimer = null;
 function select(s, focus = false) {
   sel = s;
   if (s && s.kind === 'node') lastNode = s.id;
@@ -705,8 +732,8 @@ function setTool(t) {
   pendingFrom = null;
   document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
   const hints = {
-    select: 'クリックで選択。左ドラッグで移動、右ドラッグで回転、ホイールで拡大縮小。',
-    move: '矢印をドラッグして移動 (水平だけ動かすと標高は床に自動で合わせます)。床をクリックするとその点へ移動。',
+    select: 'クリックで選択。左ドラッグで移動、右ドラッグで回転、ホイールで拡大縮小。選択中のノードは矢印キーで動かせます (Shift で 1 m、PageUp/Down で上下)。',
+    move: '赤い矢印で東西、緑で南北、青で上下にドラッグ (水平だけなら標高は床に自動で合わせます)。床をクリックでその点へ。矢印キーで画面の左右・奥/手前へ 0.1 m (Shift で 1 m)。',
     addNode: '床をクリックすると、そこに中継点ノードを追加します。',
     addEdge: 'つなぐノードを順にクリック。続けてクリックすると数珠つなぎに追加。Esc で終了。',
     link: '選択中のノードに紐付ける PLATEAU の面 (扉など) をクリック。',
@@ -903,6 +930,10 @@ window.addEventListener('keydown', (ev) => {
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   const tools = { v: 'select', m: 'move', n: 'addNode', c: 'addEdge', l: 'link' };
   if (tools[k]) return setTool(tools[k]);
+  if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'pageup', 'pagedown'].includes(k) && sel && sel.kind === 'node') {
+    ev.preventDefault();
+    return nudge(k, ev.shiftKey);
+  }
   if (k === 'delete' || k === 'backspace') return deleteSelection();
   if (k === 'f') return focusSelection();
   if (k === 't') return viewFrom('top');
@@ -913,6 +944,30 @@ window.addEventListener('keydown', (ev) => {
     return select(null);
   }
 });
+
+// 選択中のノードを、画面の左右・奥/手前 (水平) と上下へ少しずつ動かす。
+// 水平に動かしても標高は自動 (床に吸着) のまま。上下は手入力扱い
+function nudge(key, big) {
+  const n = nodeById.get(sel.id);
+  if (!n) return;
+  const step = big ? 1 : 0.1;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  if (key === 'pageup' || key === 'pagedown') {
+    const z = r2(n.z + (key === 'pageup' ? step : -step));
+    return commit(() => { nodeEdit(n.id).z = z; }, `${n.id} の標高を ${f2(z)} m にしました`, `nudge:${n.id}`);
+  }
+  // 画面の右 = カメラの x 軸 (OrbitControls は傾けないので水平)。奥 = 上向き × 右
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  right.z = 0;
+  right.normalize();
+  const fwd = new THREE.Vector3(-right.y, right.x, 0);
+  const [v, name] = { arrowright: [right, '右'], arrowleft: [right.clone().negate(), '左'], arrowup: [fwd, '奥'], arrowdown: [fwd.clone().negate(), '手前'] }[key];
+  commit(() => {
+    const ed = nodeEdit(n.id);
+    ed.x = r2(n.x + v.x * step);
+    ed.y = r2(n.y + v.y * step);
+  }, `${n.id} を${name}へ ${step} m 動かしました`, `nudge:${n.id}`);
+}
 
 // ------------------------------------------------------------------ 書き出し
 
