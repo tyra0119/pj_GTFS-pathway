@@ -1,0 +1,150 @@
+:root {
+  --bg: #15181c;
+  --panel: #1d2126;
+  --panel-2: #252a30;
+  --line: #333a42;
+  --text: #e6e8ea;
+  --muted: #9aa3ad;
+  --accent: #4dabf7;
+  --ok: #2ecc71;
+  --info: #4aa3df;
+  --warn: #f39c12;
+  --error: #e74c3c;
+  --done: #7f8c8d;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 "Segoe UI", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+  display: grid;
+  grid-template-columns: 260px 1fr 340px;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas: "top top top" "left view right" "status status status";
+  overflow: hidden;
+}
+
+#toolbar {
+  grid-area: top;
+  display: flex; align-items: center; gap: 16px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 600; white-space: nowrap; }
+.brand span { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.tools, .actions { display: flex; gap: 4px; align-items: center; }
+.actions { margin-left: auto; }
+
+button {
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 4px;
+  padding: 4px 10px; font: inherit; cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.active { background: var(--accent); border-color: var(--accent); color: #0b1620; }
+button.primary { background: #2f6f9f; border-color: #2f6f9f; }
+button.danger { border-color: #8e3b33; color: #ffb3aa; }
+button.small { padding: 2px 8px; font-size: 12px; }
+button:disabled { opacity: .4; cursor: default; }
+kbd { font: 11px ui-monospace, Consolas, monospace; color: var(--muted); margin-left: 2px; }
+button.active kbd { color: #0b1620; }
+
+.save-state { color: var(--muted); font-size: 12px; min-width: 7em; text-align: right; }
+.save-state.dirty { color: var(--warn); }
+.save-state.error { color: var(--error); }
+
+aside {
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 8px 12px 24px;
+}
+#left { grid-area: left; border-right: 1px solid var(--line); }
+#right { grid-area: right; border-left: 1px solid var(--line); display: flex; flex-direction: column; padding-bottom: 0; }
+#view { grid-area: view; position: relative; overflow: hidden; outline: none; }
+#view canvas { display: block; }
+
+h2 { font-size: 12px; text-transform: none; letter-spacing: .02em; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+h2 small { font-weight: 400; }
+section:first-child h2 { margin-top: 4px; }
+.hint { color: var(--muted); font-size: 12px; margin: 0 0 6px; }
+.row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+.row input[type=range] { flex: 1; min-width: 0; }
+.row input[type=number] { width: 80px; }
+input, select, textarea {
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); border-radius: 3px; font: inherit; padding: 2px 4px;
+}
+
+.layer { display: grid; grid-template-columns: 18px 1fr 70px; align-items: center; gap: 4px; margin: 2px 0; }
+.layer i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.layer input[type=range] { width: 70px; }
+
+#levels { width: 100%; border-collapse: collapse; font-size: 12px; }
+#levels th { text-align: left; color: var(--muted); font-weight: 400; border-bottom: 1px solid var(--line); }
+#levels td { padding: 2px 3px; border-bottom: 1px solid #262b31; }
+#levels tr { cursor: pointer; }
+#levels tr.focus td { background: #22384a; }
+#levels input { width: 62px; }
+#levels .src { color: var(--muted); }
+#levels .src.manual { color: var(--accent); }
+#levels .src.extrapolated { color: var(--warn); }
+
+.legend div { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.legend .sub { display: block; margin-top: 4px; color: var(--muted); }
+.legend .sub span { margin-right: 4px; }
+
+#selection { border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+#selection dl { display: grid; grid-template-columns: 84px 1fr; gap: 2px 8px; margin: 0; }
+#selection dt { color: var(--muted); }
+#selection dd { margin: 0; word-break: break-all; }
+#selection .btns { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+#selection textarea { width: 100%; min-height: 40px; margin-top: 6px; }
+#selection .cands button { margin: 2px 4px 2px 0; }
+.idlink { color: var(--accent); cursor: pointer; text-decoration: underline dotted; }
+.tag { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 11px; background: var(--panel-2); border: 1px solid var(--line); }
+.tag.warn { border-color: var(--warn); color: var(--warn); }
+.tag.info { border-color: var(--info); color: var(--info); }
+.tag.ok { border-color: var(--ok); color: var(--ok); }
+.tag.manual { border-color: var(--accent); color: var(--accent); }
+
+#issues-box { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.filters { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
+#issues { list-style: none; margin: 6px 0 0; padding: 0; overflow-y: auto; flex: 1; }
+#issues li {
+  display: grid; grid-template-columns: 10px 1fr; gap: 6px;
+  padding: 4px 4px; border-bottom: 1px solid #262b31; cursor: pointer;
+}
+#issues li:hover { background: var(--panel-2); }
+#issues li.sel { background: #22384a; }
+#issues li i { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; }
+#issues li .id { color: var(--muted); font-size: 11px; }
+#issues li.reviewed { opacity: .5; }
+
+#status {
+  grid-area: status;
+  display: flex; justify-content: space-between; gap: 12px;
+  padding: 3px 12px; font-size: 12px; color: var(--muted);
+  background: var(--panel); border-top: 1px solid var(--line);
+}
+
+#toast {
+  position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%);
+  background: #2b3138; border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 14px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 70vw;
+}
+#toast.show { opacity: 1; }
+
+.label3d {
+  font: 11px/1.2 "Segoe UI", "Yu Gothic UI", sans-serif;
+  color: #fff; background: rgba(20, 24, 28, .75); padding: 1px 4px; border-radius: 3px;
+  pointer-events: none; white-space: nowrap;
+}
+.label3d.sel { background: var(--accent); color: #0b1620; }
+
+#status .credit { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status #hover { color: var(--text); }
