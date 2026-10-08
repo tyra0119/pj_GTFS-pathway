@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=1e52a6b-muz7hcke';
-import { toLatLon } from './geo.js?v=1e52a6b-muz7hcke';
-import { stationGtfsFiles, extraFiles } from './export-files.js?v=1e52a6b-muz7hcke';
-import { makeZip } from './zip.js?v=1e52a6b-muz7hcke';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=1b3f2b0-mv077tj5';
+import { toLatLon } from './geo.js?v=1b3f2b0-mv077tj5';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=1b3f2b0-mv077tj5';
+import { makeZip } from './zip.js?v=1b3f2b0-mv077tj5';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -213,27 +213,53 @@ function surfaceMesh(surfIds, color) {
 
 const graph = new THREE.Group();
 world.add(graph);
-let nodeMesh = null, edgeLines = null, labels = [];
+let nodePts = [], edgeLines = null, labels = [];
 const lineMats = [];
-const nodeGeo = new THREE.SphereGeometry(0.45, 12, 8);
-// ノード・リンク・選択の印は transparent にして、半透明の床・壁 (transparent) より後に描く。
+
+// ノードは、拡大・縮小しても画面上で同じ大きさの点 (Points) で描く。実寸の球だと引いたときに小さすぎて選びにくい。
+// ノード・リンク・印は transparent にして、半透明の床・壁 (transparent) より後に描く。
 // three.js は不透明なものを先に、半透明なものを後に描くので、不透明のままだと renderOrder を上げても
 // 半透明の床が上から塗られて「床の裏」に隠れる。半透明の組の中では renderOrder の大きいものが後
-const nodeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true });
-const selMarker = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 12), new THREE.MeshBasicMaterial({ color: 0x4dabf7, wireframe: true, depthTest: false, transparent: true }));
-selMarker.renderOrder = 20;
-selMarker.visible = false;
-world.add(selMarker);
-const pendMarker = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd43b, wireframe: true, depthTest: false, transparent: true }));
-pendMarker.renderOrder = 20;
-pendMarker.visible = false;
-world.add(pendMarker);
+function circleTexture(ring) {
+  const S = 64, cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+  g.beginPath();
+  g.arc(S / 2, S / 2, S / 2 - (ring ? 6 : 4), 0, Math.PI * 2);
+  if (ring) { g.lineWidth = 8; g.strokeStyle = '#fff'; g.stroke(); }
+  else { g.fillStyle = '#fff'; g.fill(); g.lineWidth = 6; g.strokeStyle = 'rgba(10,14,18,0.9)'; g.stroke(); }
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const DOT = circleTexture(false), RING = circleTexture(true);
+const NODE_PX = 9, NODE_BIG_PX = 14; // 中継点・乗降エリア / 出入口・ホーム
+function marker(color, size) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ color, size, sizeAttenuation: false, map: RING, transparent: true, alphaTest: 0.2, depthTest: false }));
+  m.renderOrder = 20;
+  m.visible = false;
+  world.add(m);
+  return m;
+}
+const selMarker = marker(0x4dabf7, 26);
+const pendMarker = marker(0xffd43b, 24);
+const hoverMarker = marker(0xffffff, 22);
 const selEdgeMat = new LineMaterial({ color: 0x4dabf7, linewidth: 7, depthTest: false, transparent: true });
 lineMats.push(selEdgeMat);
 const selEdge = new LineSegments2(new LineSegmentsGeometry(), selEdgeMat);
 selEdge.renderOrder = 19;
 selEdge.visible = false;
 world.add(selEdge);
+const hoverEdgeMat = new LineMaterial({ color: 0xffffff, linewidth: 5, depthTest: false, transparent: true, opacity: 0.85 });
+lineMats.push(hoverEdgeMat);
+const hoverEdge = new LineSegments2(new LineSegmentsGeometry(), hoverEdgeMat);
+hoverEdge.renderOrder = 18;
+hoverEdge.visible = false;
+world.add(hoverEdge);
+const hoverSurf = new THREE.Group(); // マウスの下の面 (クリックで選ばれる面)
+world.add(hoverSurf);
 
 const LIFT = 0.25; // 床にめり込まないよう少し浮かせて描く
 let result = null;
@@ -259,25 +285,33 @@ function edgeColor(e) {
 
 function drawGraph() {
   const front = $('#graph-front').checked;
-  if (nodeMesh) { graph.remove(nodeMesh); nodeMesh.dispose(); }
+  for (const p of nodePts) { graph.remove(p); p.geometry.dispose(); p.material.dispose(); }
+  nodePts = [];
   if (edgeLines) { graph.remove(edgeLines); edgeLines.geometry.dispose(); }
   for (const l of labels) graph.remove(l);
   labels = [];
 
   const nodes = result.nodes.filter((n) => n.z != null);
-  nodeMesh = new THREE.InstancedMesh(nodeGeo, nodeMat, nodes.length);
-  nodeMat.depthTest = !front;
-  nodeMesh.renderOrder = 10;
-  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), c = new THREE.Color();
-  nodes.forEach((n, i) => {
-    const k = n.location_type === '2' ? 1.9 : n.location_type === '4' ? 1.3 : n.location_type === '0' ? 1.6 : 1;
-    s.set(k, k, k / clip.zscale);
-    mtx.compose(new THREE.Vector3(n.x, n.y, n.z + LIFT), q, s);
-    nodeMesh.setMatrixAt(i, mtx);
-    nodeMesh.setColorAt(i, c.setHex(nodeColor(n)));
-  });
-  nodeMesh.userData.nodes = nodes;
-  graph.add(nodeMesh);
+  const c = new THREE.Color();
+  for (const big of [false, true]) {
+    const pos = [], col = [];
+    for (const n of nodes) {
+      if ((n.location_type === '2' || n.location_type === '0') !== big) continue;
+      pos.push(n.x, n.y, n.z + LIFT);
+      c.setHex(nodeColor(n));
+      col.push(c.r, c.g, c.b);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({
+      size: big ? NODE_BIG_PX : NODE_PX, sizeAttenuation: false, map: DOT, vertexColors: true,
+      transparent: true, alphaTest: 0.2, depthTest: !front,
+    }));
+    p.renderOrder = 10;
+    graph.add(p);
+    nodePts.push(p);
+  }
 
   const pos = [], col = [];
   for (const e of result.edges) {
@@ -318,14 +352,12 @@ function drawSelection() {
   if (pendingFrom && nodeById.has(pendingFrom)) {
     const n = nodeById.get(pendingFrom);
     pendMarker.position.set(n.x, n.y, n.z + LIFT);
-    pendMarker.scale.set(1, 1, 1 / clip.zscale);
     pendMarker.visible = true;
   }
   if (!sel) return;
   if (sel.kind === 'node' && nodeById.has(sel.id)) {
     const n = nodeById.get(sel.id);
     selMarker.position.set(n.x, n.y, n.z + LIFT);
-    selMarker.scale.set(1, 1, 1 / clip.zscale);
     selMarker.visible = true;
     const surfs = [];
     if (n.link) { const i = meta.surfaces.findIndex((s) => s.id === n.link); if (i >= 0) surfs.push(i); }
@@ -866,45 +898,128 @@ const ndc = new THREE.Vector2();
 function screenOf(x, y, z) {
   const v = new THREE.Vector3(x, y, (z + LIFT) * clip.zscale).project(camera);
   const r = renderer.domElement.getBoundingClientRect();
-  return { x: ((v.x + 1) / 2) * r.width, y: ((1 - v.y) / 2) * r.height, behind: v.z > 1 };
+  return { x: ((v.x + 1) / 2) * r.width, y: ((1 - v.y) / 2) * r.height, behind: v.z > 1, depth: v.z };
 }
 
-// ノードとリンクは画面上の距離で拾う (小さい球をレイで当てるより確実)
-function pickGraph(px, py, { edges = true } = {}) {
-  let best = null;
-  for (const n of result.nodes) {
-    if (n.z == null || !inRange(n.z)) continue;
-    const s = screenOf(n.x, n.y, n.z);
-    if (s.behind) continue;
-    const d = Math.hypot(s.x - px, s.y - py);
-    if (d < 10 && (!best || d < best.d)) best = { kind: 'node', id: n.id, d };
+// ---- 候補を集める
+// ノード・リンクは画面上の距離で拾う (球にレイを当てるより確実)。面はレイが当たったものを手前から。
+// 同じ場所をもう一度クリックすると、重なっている次の候補に移る (choose の cycle)。
+const NODE_R = 12, EDGE_R = 7; // 拾う距離 (画面上の px)
+const FLOOR_TYPES = ['FloorSurface', 'GroundSurface', 'IntBuildingInstallation'];
+
+function graphCandidates(px, py, { nodes = true, edges = true } = {}) {
+  const out = [];
+  if (nodes) {
+    for (const n of result.nodes) {
+      if (n.z == null || !inRange(n.z)) continue;
+      const s = screenOf(n.x, n.y, n.z);
+      if (s.behind) continue;
+      const d = Math.hypot(s.x - px, s.y - py);
+      if (d < NODE_R) out.push({ kind: 'node', id: n.id, d, depth: s.depth });
+    }
   }
-  if (best || !edges) return best;
-  for (const e of result.edges) {
-    const a = nodeById.get(e.from), b = nodeById.get(e.to);
-    if (!inRange(a.z) && !inRange(b.z)) continue;
-    const sa = screenOf(a.x, a.y, a.z), sb = screenOf(b.x, b.y, b.z);
-    if (sa.behind || sb.behind) continue;
-    const vx = sb.x - sa.x, vy = sb.y - sa.y, L = vx * vx + vy * vy;
-    const t = L ? Math.max(0, Math.min(1, ((px - sa.x) * vx + (py - sa.y) * vy) / L)) : 0;
-    const d = Math.hypot(sa.x + vx * t - px, sa.y + vy * t - py);
-    if (d < 6 && (!best || d < best.d)) best = { kind: 'edge', id: e.id, d };
+  if (edges) {
+    for (const e of result.edges) {
+      const a = nodeById.get(e.from), b = nodeById.get(e.to);
+      if (!inRange(a.z) && !inRange(b.z)) continue;
+      const sa = screenOf(a.x, a.y, a.z), sb = screenOf(b.x, b.y, b.z);
+      if (sa.behind || sb.behind) continue;
+      const vx = sb.x - sa.x, vy = sb.y - sa.y, L = vx * vx + vy * vy;
+      const t = L ? Math.max(0, Math.min(1, ((px - sa.x) * vx + (py - sa.y) * vy) / L)) : 0;
+      const d = Math.hypot(sa.x + vx * t - px, sa.y + vy * t - py);
+      // リンクはノードより後ろに並べる (端のノードの上ではノードを先に選ぶ)
+      if (d < EDGE_R) out.push({ kind: 'edge', id: e.id, d: d + 100, depth: sa.depth + (sb.depth - sa.depth) * t });
+    }
   }
-  return best;
+  // 近い順。ほぼ同じ距離なら手前を先に
+  out.sort((p, q) => (Math.abs(p.d - q.d) < 2 ? p.depth - q.depth : p.d - q.d));
+  return out;
 }
 
-function pickSurface(px, py, onlyTypes = null) {
+function surfaceCandidates(px, py, onlyTypes = null, max = 6) {
   const r = renderer.domElement.getBoundingClientRect();
   ndc.set((px / r.width) * 2 - 1, -(py / r.height) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   const meshes = Object.values(layerMeshes).filter((m) => m.visible && (!onlyTypes || onlyTypes.includes(m.userData.type)));
+  const out = [], seen = new Set();
   for (const h of ray.intersectObjects(meshes, false)) {
     const p = world.worldToLocal(h.point.clone());
     if (p.z > clip.top + 0.01 || p.z < clip.bottom - 0.01) continue; // 切断で隠れている部分は拾わない
-    if (h.object.material.opacity < 0.12 && !onlyTypes) continue; // ほぼ透明な面は素通り
-    return { kind: 'surface', si: h.object.userData.tri[h.faceIndex], point: p, type: h.object.userData.type };
+    const si = h.object.userData.tri[h.faceIndex];
+    if (seen.has(si)) continue;
+    seen.add(si);
+    out.push({ kind: 'surface', si, point: p, type: h.object.userData.type });
+    if (out.length >= max) break;
   }
-  return null;
+  return out;
+}
+
+// ツールごとに、クリックで選べるものの候補
+function candidatesFor(px, py) {
+  if (tool === 'select') return [...graphCandidates(px, py), ...surfaceCandidates(px, py)];
+  if (tool === 'move' || tool === 'link') {
+    const g = graphCandidates(px, py, { edges: false });
+    if (g.length) return g;
+    if (!sel || sel.kind !== 'node') return [];
+    return surfaceCandidates(px, py, tool === 'move' ? FLOOR_TYPES : null);
+  }
+  if (tool === 'addNode') return surfaceCandidates(px, py, FLOOR_TYPES, 1);
+  if (tool === 'addEdge') return graphCandidates(px, py, { edges: false });
+  return [];
+}
+
+// 床をクリックして置く操作 (移動先・ノード追加) は候補を切り替えず、いちばん手前の床を使う
+const isPlacing = (list) => (tool === 'move' && list[0]?.kind === 'surface') || tool === 'addNode';
+
+const keyOf = (c) => (c.kind === 'surface' ? 's' + c.si : c.kind[0] + c.id);
+let cycle = { x: -99, y: -99, at: 0, i: 0, sig: '' };
+// 同じ場所 (5 px 以内・4 秒以内) で同じ候補の組なら、次の候補を返す。advance=false は覗くだけ (マウスを乗せたとき)
+function choose(px, py, list, advance) {
+  if (!list.length) return { item: null, i: 0, n: 0 };
+  const sig = list.map(keyOf).join('|');
+  const again = Math.hypot(px - cycle.x, py - cycle.y) < 5 && Date.now() - cycle.at < 4000 && cycle.sig === sig;
+  const i = again ? (cycle.i + 1) % list.length : 0;
+  if (advance) cycle = { x: px, y: py, at: Date.now(), i, sig };
+  return { item: list[i], i, n: list.length };
+}
+
+const SURFACE_NAMES = Object.fromEntries(LAYERS.map((L) => [L.type, L.label]));
+function describe(c) {
+  if (!c) return '';
+  if (c.kind === 'node') {
+    const n = nodeById.get(c.id);
+    return `ノード ${n.id}${n.name ? ' ' + n.name : ''} (${LOC_TYPE[n.location_type] ?? ''}・階 ${n.level_id || '-'}・${f2(n.z)} m)`;
+  }
+  if (c.kind === 'edge') {
+    const e = edgeById.get(c.id);
+    return `リンク ${e.id} ${MODE_NAMES[e.mode] ?? e.mode} ${e.from} → ${e.to}`;
+  }
+  const s = meta.surfaces[c.si];
+  return `${SURFACE_NAMES[s.type] ?? s.type} (${f2(c.point.z)} m)`;
+}
+
+// マウスの下で「クリックすると選ばれるもの」を強調する
+let hoverSurfSi = -1;
+function showHover(c) {
+  hoverMarker.visible = false;
+  hoverEdge.visible = false;
+  if (!c || c.kind !== 'surface') { hoverSurf.clear(); hoverSurfSi = -1; }
+  if (!c) return;
+  if (c.kind === 'node') {
+    const n = nodeById.get(c.id);
+    hoverMarker.position.set(n.x, n.y, n.z + LIFT);
+    hoverMarker.visible = true;
+  } else if (c.kind === 'edge') {
+    const e = edgeById.get(c.id), a = nodeById.get(e.from), b = nodeById.get(e.to);
+    hoverEdge.geometry.setPositions([a.x, a.y, a.z + LIFT, b.x, b.y, b.z + LIFT]);
+    hoverEdge.visible = true;
+  } else if (c.si !== hoverSurfSi) {
+    hoverSurf.clear();
+    const m = surfaceMesh([c.si], 0xfff3bf);
+    m.material.opacity = 0.35;
+    hoverSurf.add(m);
+    hoverSurfSi = c.si;
+  }
 }
 
 function nearestLevel(z) {
@@ -916,43 +1031,39 @@ function nearestLevel(z) {
 function onClick(px, py) {
   controls.update(); // 描画ループが止まっていた直後でも視点を最新にしてから判定する
   camera.updateMatrixWorld();
-  if (tool === 'select') {
-    const g = pickGraph(px, py);
-    if (g) return select({ kind: g.kind, id: g.id });
-    const s = pickSurface(px, py);
-    return select(s);
-  }
+  const list = candidatesFor(px, py);
+  const placing = isPlacing(list);
+  const { item: c, i, n } = choose(px, py, list, !placing);
+  if (n > 1 && !placing) toast(`重なっている ${n} 件の ${i + 1} 件目: ${describe(c)}（同じ場所をもう一度クリックで次へ）`);
+
+  if (tool === 'select') return select(c ? { kind: c.kind, id: c.id, si: c.si, point: c.point } : null);
   if (tool === 'move') {
-    const g = pickGraph(px, py, { edges: false });
-    if (g) return select({ kind: 'node', id: g.id });
+    if (c && c.kind === 'node') return select({ kind: 'node', id: c.id });
     if (!sel || sel.kind !== 'node') return toast('先に動かすノードをクリックしてください');
-    const s = pickSurface(px, py, ['FloorSurface', 'GroundSurface', 'IntBuildingInstallation']);
-    if (!s) return;
+    if (!c) return;
     const id = sel.id;
     return commit((e) => {
       const ed = nodeEdit(id);
-      ed.x = Math.round(s.point.x * 100) / 100;
-      ed.y = Math.round(s.point.y * 100) / 100;
-      ed.z = Math.round(s.point.z * 100) / 100;
-    }, `${id} を床の上 (${f2(s.point.z)} m) に移動しました`);
+      ed.x = Math.round(c.point.x * 100) / 100;
+      ed.y = Math.round(c.point.y * 100) / 100;
+      ed.z = Math.round(c.point.z * 100) / 100;
+    }, `${id} を床の上 (${f2(c.point.z)} m) に移動しました`);
   }
   if (tool === 'addNode') {
-    const s = pickSurface(px, py, ['FloorSurface', 'GroundSurface', 'IntBuildingInstallation']);
-    if (!s) return toast('床をクリックしてください');
+    if (!c) return toast('床をクリックしてください');
     let newId;
     commit((e) => {
       e.seq += 1;
       newId = `${STATION}X${String(e.seq).padStart(4, '0')}`;
-      e.addedNodes.push({ id: newId, location_type: '3', level_id: nearestLevel(s.point.z), x: Math.round(s.point.x * 100) / 100, y: Math.round(s.point.y * 100) / 100 });
+      e.addedNodes.push({ id: newId, location_type: '3', level_id: nearestLevel(c.point.z), x: Math.round(c.point.x * 100) / 100, y: Math.round(c.point.y * 100) / 100 });
     }, 'ノードを追加しました');
     return select({ kind: 'node', id: newId });
   }
   if (tool === 'addEdge') {
-    const g = pickGraph(px, py, { edges: false });
-    if (!g) return;
-    if (!pendingFrom) { pendingFrom = g.id; drawSelection(); return toast(`${g.id} から。つなぐ先のノードをクリック`); }
-    if (pendingFrom === g.id) return;
-    const from = pendingFrom, to = g.id;
+    if (!c) return;
+    if (!pendingFrom) { pendingFrom = c.id; drawSelection(); return toast(`${c.id} から。つなぐ先のノードをクリック`); }
+    if (pendingFrom === c.id) return;
+    const from = pendingFrom, to = c.id;
     if (result.edges.some((e) => (e.from === from && e.to === to) || (e.from === to && e.to === from)))
       return toast('その 2 つはすでにつながっています');
     let newId;
@@ -965,12 +1076,10 @@ function onClick(px, py) {
     return select({ kind: 'edge', id: newId });
   }
   if (tool === 'link') {
-    const g = pickGraph(px, py, { edges: false });
-    if (g) return select({ kind: 'node', id: g.id });
+    if (c && c.kind === 'node') return select({ kind: 'node', id: c.id });
     if (!sel || sel.kind !== 'node') return toast('先に紐付けるノードをクリックしてください');
-    const s = pickSurface(px, py);
-    if (!s) return;
-    return linkSurface(sel.id, s.si);
+    if (!c) return;
+    return linkSurface(sel.id, c.si);
   }
 }
 
@@ -985,17 +1094,27 @@ renderer.domElement.addEventListener('pointerup', (ev) => {
 });
 let hoverReq = null;
 renderer.domElement.addEventListener('pointermove', (ev) => {
-  if (hoverReq) return;
+  if (hoverReq || ev.buttons) return; // ボタンを押したまま (視点の移動・回転・矢印のドラッグ) は判定しない
   hoverReq = requestAnimationFrame(() => {
     hoverReq = null;
     if (!result) return;
     camera.updateMatrixWorld();
-    const g = pickGraph(ev.offsetX, ev.offsetY);
+    const list = candidatesFor(ev.offsetX, ev.offsetY);
+    const placing = isPlacing(list);
+    const { item, i, n } = choose(ev.offsetX, ev.offsetY, list, false);
+    showHover(item);
+    renderer.domElement.style.cursor = item ? 'pointer' : '';
     let t = '';
-    if (g && g.kind === 'node') { const n = nodeById.get(g.id); t = `ノード ${n.id} ${n.name || ''} 階 ${n.level_id || '-'} 標高 ${f2(n.z)} m`; }
-    if (g && g.kind === 'edge') { const e = edgeById.get(g.id); t = `リンク ${e.id} ${MODE_NAMES[e.mode] ?? e.mode} ${e.from} → ${e.to}`; }
+    if (item) {
+      t = (placing ? 'ここに置く: ' : 'クリックで: ') + describe(item);
+      if (n > 1 && !placing) t += `（重なり ${n} 件中 ${i + 1} 件目。もう一度クリックで次）`;
+    }
     $('#hover').textContent = t;
   });
+});
+renderer.domElement.addEventListener('pointerleave', () => {
+  showHover(null);
+  $('#hover').textContent = '';
 });
 
 window.addEventListener('keydown', (ev) => {
@@ -1158,4 +1277,4 @@ renderer.setAnimationLoop(() => {
   labelRenderer.render(scene, camera);
 });
 
-window.__app = { get result() { return result; }, get edits() { return edits; }, select, setTool, onClick, pickSurface, pickGraph, tc, THREE, camera, layerMeshes, ray, renderer };
+window.__app = { get result() { return result; }, get edits() { return edits; }, select, setTool, onClick, candidatesFor, choose, tc, THREE, camera, layerMeshes, ray, renderer };
