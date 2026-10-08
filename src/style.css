@@ -148,3 +148,16 @@ input, select, textarea {
 
 #status .credit { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #status #hover { color: var(--text); }
+
+/* 狭い画面: ボタン名を折り返さず、ツールバーを 2 段にし、左右の列を細くする */
+button { white-space: nowrap; }
+#toolbar { flex-wrap: wrap; row-gap: 4px; }
+@media (max-width: 1280px) {
+  body { grid-template-columns: 220px 1fr 280px; }
+  .brand span { display: none; }
+  kbd { display: none; }
+}
+@media (max-width: 900px) {
+  body { grid-template-columns: 190px 1fr 240px; }
+  .save-state { min-width: 0; }
+}
