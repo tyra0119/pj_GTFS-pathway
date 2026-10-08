@@ -109,7 +109,9 @@ const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 5000);
 camera.up.set(0, 0, 1);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.screenSpacePanning = false;
+controls.screenSpacePanning = false; // 平行移動は地面に沿って
+// 地図アプリなどに合わせ、左ドラッグで移動・右ドラッグで回転 (three.js の初めの値は逆)
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 scene.add(new THREE.HemisphereLight(0xffffff, 0x3a3f45, 1.6));
 const sun = new THREE.DirectionalLight(0xffffff, 1.2);
 sun.position.set(-100, -150, 300);
@@ -701,7 +703,7 @@ function setTool(t) {
   pendingFrom = null;
   document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
   const hints = {
-    select: 'クリックで選択。ドラッグで回転、右ドラッグで平行移動、ホイールで拡大縮小。',
+    select: 'クリックで選択。左ドラッグで移動、右ドラッグで回転、ホイールで拡大縮小。',
     move: '矢印をドラッグして移動 (水平だけ動かすと標高は床に自動で合わせます)。床をクリックするとその点へ移動。',
     addNode: '床をクリックすると、そこに中継点ノードを追加します。',
     addEdge: 'つなぐノードを順にクリック。続けてクリックすると数珠つなぎに追加。Esc で終了。',
