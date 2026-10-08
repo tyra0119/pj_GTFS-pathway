@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=2370a66-muz5ahnm';
-import { toLatLon } from './geo.js?v=2370a66-muz5ahnm';
-import { stationGtfsFiles, extraFiles } from './export-files.js?v=2370a66-muz5ahnm';
-import { makeZip } from './zip.js?v=2370a66-muz5ahnm';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=57ee00b-muz5ntso';
+import { toLatLon } from './geo.js?v=57ee00b-muz5ntso';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=57ee00b-muz5ntso';
+import { makeZip } from './zip.js?v=57ee00b-muz5ntso';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -216,16 +216,19 @@ world.add(graph);
 let nodeMesh = null, edgeLines = null, labels = [];
 const lineMats = [];
 const nodeGeo = new THREE.SphereGeometry(0.45, 12, 8);
-const nodeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-const selMarker = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 12), new THREE.MeshBasicMaterial({ color: 0x4dabf7, wireframe: true, depthTest: false }));
+// ノード・リンク・選択の印は transparent にして、半透明の床・壁 (transparent) より後に描く。
+// three.js は不透明なものを先に、半透明なものを後に描くので、不透明のままだと renderOrder を上げても
+// 半透明の床が上から塗られて「床の裏」に隠れる。半透明の組の中では renderOrder の大きいものが後
+const nodeMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true });
+const selMarker = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 12), new THREE.MeshBasicMaterial({ color: 0x4dabf7, wireframe: true, depthTest: false, transparent: true }));
 selMarker.renderOrder = 20;
 selMarker.visible = false;
 world.add(selMarker);
-const pendMarker = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd43b, wireframe: true, depthTest: false }));
+const pendMarker = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffd43b, wireframe: true, depthTest: false, transparent: true }));
 pendMarker.renderOrder = 20;
 pendMarker.visible = false;
 world.add(pendMarker);
-const selEdgeMat = new LineMaterial({ color: 0x4dabf7, linewidth: 7, depthTest: false });
+const selEdgeMat = new LineMaterial({ color: 0x4dabf7, linewidth: 7, depthTest: false, transparent: true });
 lineMats.push(selEdgeMat);
 const selEdge = new LineSegments2(new LineSegmentsGeometry(), selEdgeMat);
 selEdge.renderOrder = 19;
@@ -286,7 +289,7 @@ function drawGraph() {
   const lg = new LineSegmentsGeometry();
   lg.setPositions(pos);
   lg.setColors(col);
-  const lm = lineMats[1] || new LineMaterial({ linewidth: 3, vertexColors: true });
+  const lm = lineMats[1] || new LineMaterial({ linewidth: 3, vertexColors: true, transparent: true });
   if (!lineMats[1]) lineMats.push(lm);
   lm.depthTest = !front;
   lm.needsUpdate = true;
