@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js';
-import { toLatLon } from './geo.js';
-import { stationGtfsFiles, extraFiles } from './export-files.js';
-import { makeZip } from './zip.js';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=5e1449c-muz53k26';
+import { toLatLon } from './geo.js?v=5e1449c-muz53k26';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=5e1449c-muz53k26';
+import { makeZip } from './zip.js?v=5e1449c-muz53k26';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -40,8 +40,10 @@ const LAYERS = [
 
 // ------------------------------------------------------------------ データ読み込み
 
-const meta = await (await fetch('data/plateau.json')).json();
-const bin = await (await fetch(`data/${meta.bin}`)).arrayBuffer();
+// 公開版は app.js?v=<版> で読まれる (tools/publish.mjs)。データにも同じ版を付けて、更新後に古いキャッシュを使わせない
+const VER = new URL(import.meta.url).search;
+const meta = await (await fetch(`data/plateau.json${VER}`)).json();
+const bin = await (await fetch(`data/${meta.bin}${VER}`)).arrayBuffer();
 const types = {};
 for (const [t, L] of Object.entries(meta.layout)) {
   types[t] = {
@@ -50,7 +52,7 @@ for (const [t, L] of Object.entries(meta.layout)) {
     tri: new Uint32Array(bin, L.tri.offset, L.tri.length),
   };
 }
-const gtfs = await (await fetch(`data/gtfs-${STATION}.json`)).json();
+const gtfs = await (await fetch(`data/gtfs-${STATION}.json${VER}`)).json();
 
 // ローカル (node server.mjs) なら手修正は edits/<駅>.json に、公開版 (GitHub Pages) ならブラウザに保存する
 const STORE_KEY = `gtfs-pathway-edits-${STATION}`;
