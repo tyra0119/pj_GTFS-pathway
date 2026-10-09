@@ -125,12 +125,19 @@ input, select, textarea {
 #issues li .id { color: var(--muted); font-size: 11px; }
 #issues li.reviewed { opacity: .5; }
 
+/* 下の帯は 1 行・高さ固定。文の長さで高さが変わると 3D 画面の大きさが変わり、描き直しで画面全体がちらつく */
 #status {
   grid-area: status;
-  display: flex; justify-content: space-between; gap: 12px;
-  padding: 3px 12px; font-size: 12px; color: var(--muted);
+  display: flex; align-items: center; gap: 12px;
+  height: 24px; padding: 0 12px; font-size: 12px; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
   background: var(--panel); border-top: 1px solid var(--line);
 }
+#status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#status #hint { flex: 1 1 0; }
+#status #hover { flex: 1 1 0; display: none; }
+#status.hovering #hint { display: none; }
+#status.hovering #hover { display: block; }
 
 #toast {
   position: fixed; left: 50%; bottom: 40px; transform: translateX(-50%);
@@ -146,7 +153,7 @@ input, select, textarea {
 }
 .label3d.sel { background: var(--accent); color: #0b1620; }
 
-#status .credit { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status .credit { flex: 0 1 auto; max-width: 40%; }
 #status #hover { color: var(--text); }
 
 /* 狭い画面: ボタン名を折り返さず、ツールバーを 2 段にし、左右の列を細くする */

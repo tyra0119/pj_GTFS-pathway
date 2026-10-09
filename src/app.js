@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=1b3f2b0-mv077tj5';
-import { toLatLon } from './geo.js?v=1b3f2b0-mv077tj5';
-import { stationGtfsFiles, extraFiles } from './export-files.js?v=1b3f2b0-mv077tj5';
-import { makeZip } from './zip.js?v=1b3f2b0-mv077tj5';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=92827d2-mv07data';
+import { toLatLon } from './geo.js?v=92827d2-mv07data';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=92827d2-mv07data';
+import { makeZip } from './zip.js?v=92827d2-mv07data';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -1000,10 +1000,14 @@ function describe(c) {
 
 // マウスの下で「クリックすると選ばれるもの」を強調する
 let hoverSurfSi = -1;
+function clearHoverSurf() {
+  for (const o of hoverSurf.children) { o.geometry.dispose(); o.material.dispose(); }
+  hoverSurf.clear();
+}
 function showHover(c) {
   hoverMarker.visible = false;
   hoverEdge.visible = false;
-  if (!c || c.kind !== 'surface') { hoverSurf.clear(); hoverSurfSi = -1; }
+  if (!c || c.kind !== 'surface') { clearHoverSurf(); hoverSurfSi = -1; }
   if (!c) return;
   if (c.kind === 'node') {
     const n = nodeById.get(c.id);
@@ -1014,10 +1018,15 @@ function showHover(c) {
     hoverEdge.geometry.setPositions([a.x, a.y, a.z + LIFT, b.x, b.y, b.z + LIFT]);
     hoverEdge.visible = true;
   } else if (c.si !== hoverSurfSi) {
-    hoverSurf.clear();
+    // 面は塗らずに輪郭だけ (大きな床や天井を塗ると、マウスを動かすたびに画面の大半が光って見づらい)
+    clearHoverSurf();
     const m = surfaceMesh([c.si], 0xfff3bf);
-    m.material.opacity = 0.35;
-    hoverSurf.add(m);
+    const edges = new THREE.EdgesGeometry(m.geometry, 1);
+    m.geometry.dispose();
+    m.material.dispose();
+    const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffe066, depthTest: false, transparent: true }));
+    line.renderOrder = 18;
+    hoverSurf.add(line);
     hoverSurfSi = c.si;
   }
 }
@@ -1110,11 +1119,14 @@ renderer.domElement.addEventListener('pointermove', (ev) => {
       if (n > 1 && !placing) t += `（重なり ${n} 件中 ${i + 1} 件目。もう一度クリックで次）`;
     }
     $('#hover').textContent = t;
+    $('#hover').title = t;
+    $('#status').classList.toggle('hovering', !!t);
   });
 });
 renderer.domElement.addEventListener('pointerleave', () => {
   showHover(null);
   $('#hover').textContent = '';
+  $('#status').classList.remove('hovering');
 });
 
 window.addEventListener('keydown', (ev) => {
