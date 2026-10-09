@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=92827d2-mv07data';
-import { toLatLon } from './geo.js?v=92827d2-mv07data';
-import { stationGtfsFiles, extraFiles } from './export-files.js?v=92827d2-mv07data';
-import { makeZip } from './zip.js?v=92827d2-mv07data';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=3bc9d42-mv07psgi';
+import { toLatLon } from './geo.js?v=3bc9d42-mv07psgi';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=3bc9d42-mv07psgi';
+import { makeZip } from './zip.js?v=3bc9d42-mv07psgi';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -60,7 +60,11 @@ const serverEdits = await fetch(`api/edits/${STATION}`)
   .then((r) => (r.ok && (r.headers.get('content-type') || '').includes('json') ? r.json() : null))
   .catch(() => null);
 const SERVER = serverEdits !== null;
-let edits = normalizeEdits(SERVER ? serverEdits : loadLocal());
+// 公開版でブラウザにまだ手修正が無ければ、公開時に同梱した手修正 (リポジトリの edits/<駅>.json) から始める
+const hasLocal = (() => { try { return !!localStorage.getItem(STORE_KEY); } catch { return false; } })();
+const bundled = SERVER || hasLocal ? null
+  : await fetch(`data/edits-${STATION}.json${VER}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+let edits = normalizeEdits(SERVER ? serverEdits : bundled || loadLocal());
 
 function loadLocal() {
   try {
@@ -185,6 +189,85 @@ $('#layers').addEventListener('input', (ev) => {
     m.needsUpdate = true;
   }
 });
+
+// ------------------------------------------------------------------ 構内図 (国土交通省 構内地図データ)
+// 階 (ordinal = level_index) ごとの床の形を、その階の推定標高 (手入力があればそれ) の少し上に、薄い面と輪郭線で描く。
+// PLATEAU・ODPT と位置を見比べるためのもの。選択の対象にはしない。
+const smap = await fetch(`data/stationmap-${STATION}.json${VER}`).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+const SMAP_KIND = { w: '通路・コンコース', s: '階段', e: 'エスカレーター', v: 'エレベーター', r: 'スロープ', t: 'トイレ' };
+const SMAP_COLOR = { w: 0x9fb3c8, wt: 0x5b8dd6, s: 0xff9f43, e: 0xa29bfe, v: 0xff6b6b, r: 0x48dbfb, t: 0x4dabf7 };
+const smapGroup = new THREE.Group();
+world.add(smapGroup);
+const smapState = { visible: true, opacity: 0.3, sig: '' };
+
+function levelZByIndex(ord) {
+  const l = Object.values(result.levels).find((v) => v.level_index === Number(ord));
+  return l ? l.z : null;
+}
+
+function buildStationMap() {
+  if (!smap) return;
+  const sig = Object.keys(smap.levels).map(levelZByIndex).join(',');
+  if (sig === smapState.sig) return; // 階の標高が変わったときだけ作り直す
+  smapState.sig = sig;
+  for (const o of smapGroup.children) { o.geometry.dispose(); o.material.dispose(); }
+  smapGroup.clear();
+  const fill = {}, line = {};
+  for (const s of smap.spaces) {
+    const z0 = levelZByIndex(s.ord);
+    if (z0 == null) continue;
+    const z = z0 + 0.06; // 床にめり込まないよう少し上
+    const key = s.kind === 'w' && s.toll ? 'wt' : s.kind;
+    const toV2 = (r) => { const a = []; for (let i = 0; i < r.length; i += 2) a.push(new THREE.Vector2(r[i], r[i + 1])); return a; };
+    const contour = toV2(s.rings[0]), holes = s.rings.slice(1).map(toV2);
+    const pts = [...contour, ...holes.flat()];
+    const f = (fill[key] ||= []);
+    for (const t of THREE.ShapeUtils.triangulateShape(contour, holes))
+      for (const i of t) f.push(pts[i].x, pts[i].y, z);
+    const l = (line[key] ||= []);
+    for (const r of s.rings)
+      for (let i = 0, j = r.length - 2; i < r.length; j = i, i += 2) l.push(r[j], r[j + 1], z, r[i], r[i + 1], z);
+  }
+  for (const [key, pos] of Object.entries(fill)) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
+      color: SMAP_COLOR[key], transparent: true, opacity: smapState.opacity, depthWrite: false,
+      side: THREE.DoubleSide, clippingPlanes: planes,
+    }));
+    m.renderOrder = 2;
+    m.userData.smap = 'fill';
+    smapGroup.add(m);
+  }
+  for (const [key, pos] of Object.entries(line)) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    const m = new THREE.LineSegments(g, new THREE.LineBasicMaterial({
+      color: SMAP_COLOR[key], transparent: true, opacity: Math.min(1, smapState.opacity * 3), clippingPlanes: planes,
+    }));
+    m.renderOrder = 3;
+    m.userData.smap = 'line';
+    smapGroup.add(m);
+  }
+  smapGroup.visible = smapState.visible;
+}
+
+if (smap) {
+  $('#layers').insertAdjacentHTML('beforeend', `
+    <label class="layer" title="国土交通省 構内地図データ (${esc(smap.source)})。階ごとに、その階の標高に描く">
+      <input type="checkbox" data-smap="1" checked>
+      <span><i style="background:#9fb3c8"></i> 構内図 (国交省)</span>
+      <input type="range" data-smap-op="1" min="0.05" max="1" step="0.05" value="${smapState.opacity}" title="不透明度"></label>`);
+  $('#layers').addEventListener('input', (ev) => {
+    const t = ev.target;
+    if (t.dataset.smap) { smapState.visible = t.checked; smapGroup.visible = t.checked; }
+    if (t.dataset.smapOp) {
+      smapState.opacity = Number(t.value);
+      for (const o of smapGroup.children)
+        o.material.opacity = o.userData.smap === 'fill' ? smapState.opacity : Math.min(1, smapState.opacity * 3);
+    }
+  });
+}
 
 // 選択中のリンクが貫く壁 / ノードに紐付けた面 を強調する
 const highlight = new THREE.Group();
@@ -382,6 +465,7 @@ const undoStack = [], redoStack = [];
 
 function recompute() {
   result = runMatch(gtfs, meta, idx, edits);
+  buildStationMap();
   nodeById = new Map(result.nodes.map((n) => [n.id, n]));
   edgeById = new Map(result.edges.map((e) => [e.id, e]));
   if (sel && sel.kind === 'node' && !nodeById.has(sel.id)) sel = null;
@@ -1211,6 +1295,7 @@ const CREDIT = [
   '出典:',
   '- 3D都市モデル（Project PLATEAU）新宿区（2025年度） 国土交通省 … 地下街モデル LOD4',
   '- 東京都交通局・公共交通オープンデータ協議会 鉄道関連情報 (GTFS-Pathways) CC BY 4.0',
+  '- 国土交通省「構内地図データ」(歩行空間ナビ) … 構内図 (表示だけ。書き出しには入らない)',
   '- 国土地理院 標高API … 地表の標高',
   '  上記を加工して作成。x_ で始まるファイルは本ツールの拡張 (GTFS の仕様外)。',
 ].join('\n');

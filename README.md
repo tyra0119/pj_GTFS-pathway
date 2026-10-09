@@ -14,5 +14,6 @@ https://tyra0119.github.io/pj_GTFS-pathway/
 
 - 3D都市モデル（Project PLATEAU）新宿区（2025年度） 国土交通省 — 地下街モデル LOD4 を加工
 - 東京都交通局・公共交通オープンデータ協議会「鉄道関連情報 (GTFS-Pathways)」 CC BY 4.0 — 新宿西口駅の分を加工
+- 国土交通省「構内地図データ」（歩行空間ナビ）— 構内図の表示
 - 国土地理院 標高 API — 地表の標高
 - three.js (MIT License) — vendor/three/
