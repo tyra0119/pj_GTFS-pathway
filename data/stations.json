@@ -1,0 +1,26 @@
+[
+ {
+  "id": "402",
+  "name": "新宿西口",
+  "plateau": "plateau.json",
+  "ward": "新宿区",
+  "credits": [
+   "3D都市モデル（Project PLATEAU）新宿区（2025年度） 国土交通省 … 地下街モデル LOD4",
+   "東京都交通局・公共交通オープンデータ協議会 鉄道関連情報 (GTFS-Pathways) CC BY 4.0",
+   "国土交通省「構内地図データ」(歩行空間ナビ) … 構内図 (表示だけ。書き出しには入らない)",
+   "国土地理院 標高API … 地表の標高"
+  ]
+ },
+ {
+  "id": "IKB",
+  "name": "池袋",
+  "plateau": "plateau-IKB.json",
+  "ward": "豊島区",
+  "credits": [
+   "3D都市モデル（Project PLATEAU）豊島区（2025年度） 国土交通省 … 地下街モデル LOD4",
+   "国土交通省「歩行空間ネットワークデータ（池袋駅周辺）」（政府標準利用規約 第2.0版） … 地上の歩道",
+   "© OpenStreetMap contributors（ODbL） … 地下の通路・出口",
+   "国土地理院 標高API … 地表の標高"
+  ]
+ }
+]

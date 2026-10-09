@@ -11,10 +11,10 @@ import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=3bc9d42-mv07psgi';
-import { toLatLon } from './geo.js?v=3bc9d42-mv07psgi';
-import { stationGtfsFiles, extraFiles } from './export-files.js?v=3bc9d42-mv07psgi';
-import { makeZip } from './zip.js?v=3bc9d42-mv07psgi';
+import { TriIndex, runMatch, MODE_NAMES } from './match.js?v=92dada0-mv0xp91l';
+import { toLatLon, setOrigin } from './geo.js?v=92dada0-mv0xp91l';
+import { stationGtfsFiles, extraFiles } from './export-files.js?v=92dada0-mv0xp91l';
+import { makeZip } from './zip.js?v=92dada0-mv0xp91l';
 
 const STATION = new URLSearchParams(location.search).get('station') || '402';
 const $ = (s) => document.querySelector(s);
@@ -42,7 +42,12 @@ const LAYERS = [
 
 // 公開版は app.js?v=<版> で読まれる (tools/publish.mjs)。データにも同じ版を付けて、更新後に古いキャッシュを使わせない
 const VER = new URL(import.meta.url).search;
-const meta = await (await fetch(`data/plateau.json${VER}`)).json();
+// 駅の一覧（prep/prep-all.mjs が作る）。駅ごとの地下街モデルのファイルと出典。無ければ新宿西口だけの古い形
+const STATIONS = await fetch(`data/stations.json${VER}`).then((r) => (r.ok ? r.json() : [])).catch(() => []);
+const ST = STATIONS.find((s) => s.id === STATION) || { id: STATION, plateau: 'plateau.json', credits: null };
+const meta = await (await fetch(`data/${ST.plateau}${VER}`)).json();
+// ローカル座標の原点は駅ごと。地下街モデルを作ったときの原点に合わせる（書き出しの緯度経度に使う）
+if (meta.origin) setOrigin(meta.origin.lat, meta.origin.lon);
 const bin = await (await fetch(`data/${meta.bin}${VER}`)).arrayBuffer();
 const types = {};
 for (const [t, L] of Object.entries(meta.layout)) {
@@ -96,7 +101,19 @@ function normalizeEdits(e) {
   };
 }
 
-$('#station-name').textContent = `${gtfs.station_name} (${STATION}) / ODPT ${gtfs.feed_version} / ${meta.source}`;
+$('#station-name').textContent = `${gtfs.station_name} (${STATION})${gtfs.feed_version ? ' / ODPT ' + gtfs.feed_version : ''} / ${meta.source}`;
+// 駅の切り替え（選ぶと ?station= を付けて開き直す）
+if (STATIONS.length > 1) {
+  const sel = $('#station-select');
+  sel.innerHTML = STATIONS.map((s) => `<option value="${s.id}"${s.id === STATION ? ' selected' : ''}>${s.name} (${s.id})</option>`).join('');
+  sel.hidden = false;
+  sel.addEventListener('change', () => { location.search = '?station=' + encodeURIComponent(sel.value); });
+}
+if (ST.credits) {
+  const c = $('#credit');
+  c.textContent = '出典: ' + ST.credits.map((x) => x.replace(/ … .*$/, '')).join(' / ');
+  c.title = c.textContent;
+}
 
 // ------------------------------------------------------------------ 3D の土台
 
@@ -1293,10 +1310,12 @@ function download(name, blob) {
 
 const CREDIT = [
   '出典:',
-  '- 3D都市モデル（Project PLATEAU）新宿区（2025年度） 国土交通省 … 地下街モデル LOD4',
-  '- 東京都交通局・公共交通オープンデータ協議会 鉄道関連情報 (GTFS-Pathways) CC BY 4.0',
-  '- 国土交通省「構内地図データ」(歩行空間ナビ) … 構内図 (表示だけ。書き出しには入らない)',
-  '- 国土地理院 標高API … 地表の標高',
+  ...(ST.credits || [
+    '3D都市モデル（Project PLATEAU）新宿区（2025年度） 国土交通省 … 地下街モデル LOD4',
+    '東京都交通局・公共交通オープンデータ協議会 鉄道関連情報 (GTFS-Pathways) CC BY 4.0',
+    '国土交通省「構内地図データ」(歩行空間ナビ) … 構内図 (表示だけ。書き出しには入らない)',
+    '国土地理院 標高API … 地表の標高',
+  ]).map((x) => '- ' + x),
   '  上記を加工して作成。x_ で始まるファイルは本ツールの拡張 (GTFS の仕様外)。',
 ].join('\n');
 

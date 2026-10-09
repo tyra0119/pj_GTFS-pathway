@@ -2,8 +2,9 @@
 
 https://tyra0119.github.io/pj_GTFS-pathway/
 
-都営大江戸線 新宿西口駅の GTFS-Pathways (駅構内の経路) を、PLATEAU の地下街 3D モデル (LOD4) に自動で重ね、
-ずれや矛盾を 3D 画面で確認しながら手で直すためのツールです。
+駅構内の経路 (GTFS-Pathways) を、PLATEAU の地下街 3D モデル (LOD4) に自動で重ね、
+ずれや矛盾を 3D 画面で確認しながら手で直すためのツールです。対象は都営大江戸線 新宿西口駅 (402) と、
+池袋駅 (IKB、Machiawase の経路網) です。画面の左上で駅を切り替えます (?station=IKB)。
 
 - 手修正はブラウザに保存されます。別の PC に持っていくときは「JSON 保存」「JSON 読込」を使ってください。
 - 「書き出し」で、この駅の stops / pathways / levels と標高の CSV (x_*.csv) を ZIP でダウンロードできます。
@@ -12,8 +13,9 @@ https://tyra0119.github.io/pj_GTFS-pathway/
 
 ## 出典
 
-- 3D都市モデル（Project PLATEAU）新宿区（2025年度） 国土交通省 — 地下街モデル LOD4 を加工
+- 3D都市モデル（Project PLATEAU）新宿区・豊島区（2025年度） 国土交通省 — 地下街モデル LOD4 を加工
 - 東京都交通局・公共交通オープンデータ協議会「鉄道関連情報 (GTFS-Pathways)」 CC BY 4.0 — 新宿西口駅の分を加工
+- 国土交通省「歩行空間ネットワークデータ（池袋駅周辺）」（政府標準利用規約 第2.0版）、© OpenStreetMap contributors（ODbL） — 池袋駅の経路網 (Machiawase) を加工
 - 国土交通省「構内地図データ」（歩行空間ナビ）— 構内図の表示
 - 国土地理院 標高 API — 地表の標高
 - three.js (MIT License) — vendor/three/
